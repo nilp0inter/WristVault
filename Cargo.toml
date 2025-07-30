@@ -1,0 +1,8 @@
+[package]
+name = "wrist-vault"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rs-asm6805 = "1.0.1"
+timex-datalink = "0.1.0"

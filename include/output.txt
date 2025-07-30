@@ -1,0 +1,76 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running `/home/nil/Projects/github.com/nilp0inter/WristVault/target/debug/wrist-vault 'test:123' /dev/null`
+WristVault - Secure Recovery Codes for Timex Datalink 150
+Generating wristapp with recovery codes...
+Generated assembly code (1190 bytes)
+Assembly code to compile:
+;Name: WristVault
+;Version: VAULT
+;Description: Secure Recovery Codes
+;
+            INCLUDE "Inc150/WRISTAPP.I"
+;
+FLAGBYTE    EQU      $61
+;
+START    EQU   *
+;
+L0110:  jmp    MAIN
+L0113:  rts
+        nop
+        nop
+L0116:  rts
+        nop
+        nop
+L0119:  rts
+        nop
+        nop
+L011c:  rts
+        nop
+        nop
+
+L011f:  lda    STATETAB,X
+        rts
+
+L0123:  jmp    HANDLE_STATE0
+        db      STATETAB-STATETAB
+
+S6_SVC0:   timex6  "TEST "
+S6_COD0:   timex6  "123 "
+
+
+STATETAB:
+        db      0
+        db    EVT_ENTER,TIM_ONCE,0
+        db      EVT_RESUME,TIM_ONCE,0
+        db      EVT_DNNEXT,TIM_ONCE,0
+        db      EVT_MODE,TIM_ONCE,$FF
+        db      EVT_END
+
+HANDLE_STATE0:
+        bset    1,$8f
+        lda    BTNSTATE
+        cmp     #EVT_DNNEXT
+        beq    SHOWNEXT
+        jsr    CLEARALL
+        lda    #S6_VAULT-START
+        jsr    PUT6TOP
+        lda    #S6_CODES-START
+        jsr    PUT6MID
+        lda    #SYS8_MODE
+        jmp    PUTMSGBOT
+
+SHOWNEXT:
+        ; Display recovery codes logic here
+        rts
+
+MAIN:
+        lda    #$c0
+        sta    $96
+        clr     FLAGBYTE
+        rts
+
+S6_VAULT:   timex6  "VAULT "
+S6_CODES:   timex6  "CODES "
+
+--- End Assembly ---
+Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
