@@ -2,6 +2,7 @@
 name = "wrist-vault"
 version = "0.1.0"
 edition = "2024"
+description = "Secure recovery codes stored on your Timex Datalink 150"
 
 [dependencies]
 rs-asm6805 = "1.0.1"

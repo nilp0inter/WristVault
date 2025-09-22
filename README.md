@@ -1,8 +1,8 @@
-# WristVault
+# WatchVault
 
 **Secure recovery codes stored on your Timex Datalink 150**
 
-WristVault is a wristapp for the Timex Datalink 150 watch that stores emergency recovery codes for your critical online accounts fully in RAM. It's designed as a last-resort backup when traveling — if you lose access to your password manager or security keys (like YubiKeys), you can use your watch to restore account access.
+WatchVault is a wristapp for the Timex Datalink 150 watch that stores emergency recovery codes for your critical online accounts fully in RAM. It's designed as a last-resort backup when traveling — if you lose access to your password manager or security keys (like YubiKeys), you can use your watch to restore account access.
 
 ## ⚠️ Use Case
 

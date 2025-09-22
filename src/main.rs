@@ -1,7 +1,7 @@
 use std::env;
 use rs_asm6805;
 use timex_datalink::{PacketGenerator, NotebookAdapter};
-use timex_datalink::protocol_4::{Protocol4, wrist_app::WristApp, start::Start, sync::Sync, end::End};
+use timex_datalink::protocol_3::{Protocol3, wrist_app::WristApp, start::Start, sync::Sync, end::End};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
@@ -36,161 +36,174 @@ fn generate_wristapp(recovery_codes: &str) -> Result<String, Box<dyn std::error:
     let codes: Vec<&str> = recovery_codes.split(',').collect();
     let num_codes = codes.len();
     
-    let template = r#";Name: WristVault
-;Version: VAULT  
-;Description: Recovery Codes with Navigation
+    let template = r#";Name: Hex Dump (Auto)
+;Version: HEXAUTO
+;Description: Automatically dumps the entire memory space, advancing with a timer.
+;by John A. Toebes, VIII (Modified by AI)
 ;
+;TIP:  Download your watch faster:  Download a WristApp once, then do not send it again.  It stays in the watch!
+;HelpFile: watchapp.hlp
+;HelpTopic: 106
             INCLUDE "Inc150/WRISTAPP.I"
 ;
-FLAGBYTE        EQU     $61    ; General flags
-CURRENT_CODE    EQU     $62    ; Current code index (0-based)
+; (1) Program specific constants
 ;
-START    EQU   *
+CURRENT_LOC_HI  EQU     $61     ; High byte of the current memory address
+CURRENT_LOC_LO  EQU     $62     ; Low byte of the current memory address
 ;
-L0110:  jmp    MAIN
-L0113:  rts
+; (2) System entry point vectors
+;
+START   EQU     *
+L0110:  jmp     MAIN    ; The main entry point - WRIST_MAIN
+L0113:  rts             ; Called when we are suspended for any reason - WRIST_SUSPEND
         nop
         nop
-L0116:  rts
+L0116:  rts             ; Called to handle any timers or time events - WRIST_DOTIC
         nop
         nop
-L0119:  rts
+L0119:  rts             ; Called when the COMM app starts and we have timers pending - WRIST_INCOMM
         nop
         nop
-L011c:  rts
+L011c:  rts             ; Called when the COMM app loads new data - WRIST_NEWDATA
         nop
         nop
-
-L011f:  lda    STATETAB0,X
+L011f:  lda     STATETAB0,X ; The state table get routine - WRIST_GETSTATE
         rts
-
-L0123:  jmp    HANDLE_STATE0
+L0123:  jmp     HANDLE_STATE0
         db      STATETAB0-STATETAB0
-L0127:  jmp    HANDLE_STATE1
-        db      STATETAB1-STATETAB0
-
-{RECOVERY_DATA}
-
+;
+; (3) Program strings
+;
+S6_BYTE:        timex6   " BYTE "
+S6_DUMPER:      timex6  "DUMPER"
+S8_LOCATION     timex   "aaaa    "
+;
+; (4) State Table - Simplified for automatic operation
+;
 STATETAB0:
         db      0
-        db      EVT_ENTER,TIM_ONCE,0
-        db      EVT_RESUME,TIM_ONCE,0
-        db      EVT_DNNEXT,TIM_ONCE,0     ; Next service
-        db      EVT_DNPREV,TIM_ONCE,0     ; Previous service
-        db      EVT_SET,TIM2_TIC,1        ; Hold SET to reveal code
-        db      EVT_MODE,TIM_ONCE,$FF
-        db      EVT_USER0,TIM_ONCE,0      ; Return from code display
+        db      EVT_ENTER,TIM_ONCE,0           ; On enter, start the auto-advance timer
+        db      EVT_RESUME,TIM2_2TIC,0          ; On resume, also start the timer
+        db      EVT_TIMER2,TIM2_2TIC,0          ; When timer fires, reset it to fire again
+        db      EVT_MODE,TIM_ONCE,$FF           ; Mode button exits the app
+        db      EVT_USER2,TIM2_24TIC,0
         db      EVT_END
-
-STATETAB1:
-        db      1
-        db      EVT_UPSET,TIM_ONCE,0      ; Released SET button
-        db      EVT_TIMER2,TIM2_TIC,1     ; Continue showing code while held
-        db      EVT_END
-
+;
+; (5) State Table 0 Handler
+;
 HANDLE_STATE0:
-        bset    1,APP_FLAGS
-        lda     BTNSTATE
-        cmp     #EVT_ENTER
-        beq     SHOW_SERVICE_LIST
-        cmp     #EVT_RESUME
-        beq     SHOW_SERVICE_LIST
-        cmp     #EVT_USER0
-        beq     SHOW_SERVICE_LIST
-        cmp     #EVT_DNNEXT
-        beq     NEXT_SERVICE
-        cmp     #EVT_DNPREV
-        beq     PREV_SERVICE
+        bset    1,APP_FLAGS                     ; Indicate that we can be suspended
+        lda     BTNSTATE                        ; Get the event
+        cmp     #EVT_ENTER                      ; Is this the initial state?
+        beq     DO_ENTER                        ; Yes, setup the initial screen.
+        cmp     #EVT_USER2                      ; Just wait
+        bne     SHOWDATA 
         rts
 
-NEXT_SERVICE:
-        lda     CURRENT_CODE
-        inca
-        cmp     #{NUM_CODES}
-        blt     SET_CURRENT_SERVICE
-        clra                    ; Wrap to first service
-        bra     SET_CURRENT_SERVICE
-
-PREV_SERVICE:
-        lda     CURRENT_CODE
-        deca
-        bpl     SET_CURRENT_SERVICE
-        lda     #{NUM_CODES_MINUS_1}    ; Wrap to last service
-
-SET_CURRENT_SERVICE:
-        sta     CURRENT_CODE
-        ; Fall through to display
-
-SHOW_SERVICE_LIST:
-        jsr     CLEARALL
-        
-        ; Show "HOLD TO" on top line using system string
-        lda     #SYS6_HOLDTO
+DO_ENTER:
+        ; Set the initial dump address
+        lda     #0
+        sta     CURRENT_LOC_HI
+        sta     CURRENT_LOC_LO
+        ; Put up the initial banner screen
+        jsr     CLEARALL                        ; Clear the display
+        lda     #S6_BYTE-START                  ; Put ' BYTE ' on the top line
         jsr     PUT6TOP
-        
-        ; Show "REVEAL" on middle line
-        lda     #S6_REVEAL-START
+        lda     #S6_DUMPER-START                ; Put 'DUMPER' on the second line
         jsr     PUT6MID
-        
-        ; Show current service name on bottom (use 8-char string)
-        lda     CURRENT_CODE
-        lsla                    ; *2 (each code has service + code entry)
-        tax
-        lda     SERVICE_TABLE,X     ; Use separate 8-char service table
-        jmp     PUTMSGBOT
-
-HANDLE_STATE1:
-        bset    1,APP_FLAGS
-        lda     BTNSTATE
-        cmp     #EVT_TIMER2
-        beq     SHOW_RECOVERY_CODE
-        cmp     #EVT_UPSET
-        beq     RETURN_TO_SERVICE
-        rts
-
-SHOW_RECOVERY_CODE:
-        jsr     CLEARALL
-        
-        ; Show "SHOWING" on top
-        lda     #S6_SHOW-START
-        jsr     PUT6TOP
-        
-        ; Show "CODE" on middle  
-        lda     #S6_CODE-START
-        jsr     PUT6MID
-        
-        ; Show actual recovery code on bottom (use 8-char string)
-        lda     CURRENT_CODE
-        tax
-        lda     CODE_TABLE,X        ; Use 8-char code table  
-        jmp     PUTMSGBOT
-
-RETURN_TO_SERVICE:
-        lda     #EVT_USER0
+        lda     #EVT_USER2
         jmp     POSTEVENT
 
+;
+; (6) This is the main screen update routine.
+;
+SHOWDATA:
+        jsr     CLEARSYM
+
+        lda     CURRENT_LOC_HI
+        clrx
+        bsr     FMTHEX
+        lda     CURRENT_LOC_LO
+        ldx     #2
+        bsr     FMTHEX
+        lda     #S8_LOCATION-START
+        jsr     BANNER8
+
+        ; Second, patch the self-modifying code for GETBYTE.
+        lda     CURRENT_LOC_HI
+        sta     GETBYTE+1
+        lda     CURRENT_LOC_LO
+        sta     GETBYTE+2
+        
+        ; Third, call the display routines for the hex data.
+        clrx
+        bsr     GETBYTE
+        jsr     PUTTOP12
+        ldx     #1
+        bsr     GETBYTE
+        jsr     PUTTOP34
+        ldx     #2
+        bsr     GETBYTE
+        jsr     PUTTOP56
+        ldx     #3
+        bsr     GETBYTE
+        jsr     PUTMID12
+        ldx     #4
+        bsr     GETBYTE
+        jsr     PUTMID34
+        ldx     #5
+        bsr     GETBYTE
+        jsr     PUTMID56
+
+NEXTLOC:
+        lda     #6                              ; We advance by 6 bytes at a time
+        add     CURRENT_LOC_LO
+        sta     CURRENT_LOC_LO
+        lda     CURRENT_LOC_HI
+        adc     #0
+        sta     CURRENT_LOC_HI
+
+        cmp     #$5
+        beq     DO_ENTER
+        rts
+
+;
+; (7) GETBYTE gets a byte from memory and formats it as a hex value
+;
+GETBYTE:
+        lda     $FFFF,X                 ; Load from address ($FFFF is a placeholder)
+        sta     DATDIGIT2
+        lsra
+        lsra
+        lsra
+        lsra
+        sta     DATDIGIT1
+        lda     DATDIGIT2
+        and     #$0f
+        sta     DATDIGIT2
+        rts
+;
+; (8) FMTHEX is a routine similar to FMTX, but it handles hex values
+;
+FMTHEX:
+        sta     S8_LOCATION,X
+        and     #$0f
+        sta     S8_LOCATION+1,X
+        lda     S8_LOCATION,X
+        lsra
+        lsra
+        lsra
+        lsra
+        sta     S8_LOCATION,X
+        rts
+
+;
+; (9) This is the main initialization routine
+;
 MAIN:
         lda     #$c0
         sta     WRISTAPP_FLAGS
-        clr     FLAGBYTE
-        clr     CURRENT_CODE            ; Start with first code
-        rts
-
-S6_REVEAL:  timex6  "REVEAL"
-S6_SHOW:    timex6  "SHOW  "
-S6_CODE:    timex6  "CODE  "
-
-; 8-character service names for bottom display
-{SERVICE_TABLE_DATA}
-
-; 8-character recovery codes for bottom display  
-CODE_TABLE:
-{CODE_TABLE_DATA}
-
-; Lookup table for service names (8-char) on bottom display
-SERVICE_TABLE:
-{SERVICE_LOOKUP_DATA}
-"#;
+        rts"#;
 
     let recovery_data = format_recovery_codes(recovery_codes);
     let (service_table_data, code_table_data, service_lookup_data) = generate_tables(&codes);
@@ -332,8 +345,8 @@ fn send_to_watch(hex_data: &str, port: &str) -> Result<(), Box<dyn std::error::E
     let binary_data = hex_to_binary(hex_data)?;
     println!("Converted hex to {} bytes of binary data", binary_data.len());
     
-    // Create Protocol4 structure with WristApp
-    let mut protocol = Protocol4::new();
+    // Create Protocol3 structure with WristApp
+    let mut protocol = Protocol3::new();
     
     // Add mandatory components
     protocol.add(Sync { length: 100 });
