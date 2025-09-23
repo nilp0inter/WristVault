@@ -1,0 +1,119 @@
+;Name: WristVault
+;Version: 0.1
+;Description: Secure recovery codes stored on your Timex Datalink 150
+;by Roberto Abdelkader Martínez Pérez
+;
+;TIP:  Download your watch faster:  Download a WristApp once, then do not send it again.  It stays in the watch!
+;HelpFile: watchapp.hlp
+;HelpTopic: 106
+            INCLUDE "Inc150/WRISTAPP.I"
+;
+; (1) Program specific constants
+;
+SECRET_INDEX    EQU     $61
+
+;
+; (2) System entry point vectors
+;
+START   EQU     *
+L0110:  jmp     MAIN    ; The main entry point - WRIST_MAIN
+L0113:  rts             ; Called when we are suspended for any reason - WRIST_SUSPEND
+        nop
+        nop
+L0116:  rts             ; Called to handle any timers or time events - WRIST_DOTIC
+        nop
+        nop
+L0119:  rts             ; Called when the COMM app starts and we have timers pending - WRIST_INCOMM
+        nop
+        nop
+L011c:  rts             ; Called when the COMM app loads new data - WRIST_NEWDATA
+        nop
+        nop
+L011f:  lda     STATETAB0,X ; The state table get routine - WRIST_GETSTATE
+        rts
+L0123:  jmp     HANDLE_STATE0
+        db      STATETAB0-STATETAB0
+;
+; (3) Program strings
+;
+S6_WRIST:      timex6   " WRIST"
+S6_VAULT:      timex6   " VAULT"
+S8_LOCATION    timex    "aaaa    "
+
+S8_SERVICE_START       EQU      *
+{SERVICE_TABLE_DATA}
+
+S8_CODE_START       EQU      *
+{CODE_TABLE_DATA}
+
+;
+; (4) State Table - Simplified for automatic operation
+;
+STATETAB0:
+        db      0
+        db      EVT_ENTER,TIM1_4TIC,0           ;
+        db      EVT_RESUME,TIM_ONCE,0           ;
+        db      EVT_TIMER1,TIM_ONCE,0           ;
+        db      EVT_NEXT,TIM_ONCE,0
+        db      EVT_PREV,TIM_ONCE,0
+        db      EVT_MODE,TIM_ONCE,$FF           ; Mode button exits the app
+        db      EVT_END
+;
+; (5) State Table 0 Handler
+;
+HANDLE_STATE0:
+        clr     SECRET_INDEX                    ; Show first secret
+        lda     BTNSTATE                        ; Get the event
+        cmp     #EVT_ENTER                      ; Is this the initial state?
+        beq     DO_ENTER                        ; Yes, setup the initial screen.
+        cmp     #EVT_TIMER1
+        beq     SHOWDATA 
+	cmp     #EVT_NEXT
+	beq     GONEXT
+        jsr     GOPREV
+
+
+DO_ENTER:
+        ; Put up the initial banner screen
+        jsr     CLEARALL                        ;
+        lda     #S6_WRIST-START                 ;
+        jsr     PUT6TOP                         ;
+        lda     #S6_VAULT-START                 ;
+        jmp     PUT6MID
+
+;
+; (6) This is the main screen update routine.
+;
+SHOWDATA:
+        jmp     CLEARALL
+
+	lda     #S8_SERVICE_START-START
+	ldx	SECRET_INDEX
+
+	; TODO
+
+GONEXT:
+        lda     SECRET_INDEX
+	ldx     {NUM_CODES}
+        jsr     INCA_WRAPX
+	sta     SECRET_INDEX
+	jsr     SHOWDATA
+
+
+GOPREV:
+        lda     SECRET_INDEX
+	cmp     #0
+	bne     DECSI
+	clr
+SAVE    sta	SECRET_INDEX
+	ret
+DECSI   dec
+	jsr     SAVE
+
+;
+; (9) This is the main initialization routine
+;
+MAIN:
+        lda     #$c0
+        sta     WRISTAPP_FLAGS
+        rts
